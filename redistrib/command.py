@@ -205,26 +205,26 @@ def _join_to_cluster(clst, new):
 
 def join_cluster(cluster_host, cluster_port, newin_host, newin_port,
                  balancer=None, balance_plan=base_balance_plan):
-    with Connection(newin_host, newin_port) as t, \
-         Connection(cluster_host, cluster_port) as cnode:
-        _join_to_cluster(cnode, t)
-        nodes = []
-        try:
-            logging.info(
-                'Instance at %s:%d has joined %s:%d; now balancing slots',
-                newin_host, newin_port, cluster_host, cluster_port)
-            nodes = _list_nodes(t, default_host=newin_host)[0]
-            for src, dst, count in balance_plan(nodes, balancer):
-                _migr_slots(src, dst, src.assigned_slots[:count], nodes)
-        finally:
-            for n in nodes:
-                n.close()
+    with Connection(newin_host, newin_port) as t:
+        with Connection(cluster_host, cluster_port) as cnode:
+            _join_to_cluster(cnode, t)
+            nodes = []
+            try:
+                logging.info(
+                    'Instance at %s:%d has joined %s:%d; now balancing slots',
+                    newin_host, newin_port, cluster_host, cluster_port)
+                nodes = _list_nodes(t, default_host=newin_host)[0]
+                for src, dst, count in balance_plan(nodes, balancer):
+                    _migr_slots(src, dst, src.assigned_slots[:count], nodes)
+            finally:
+                for n in nodes:
+                    n.close()
 
 
 def add_node(cluster_host, cluster_port, newin_host, newin_port):
-    with Connection(newin_host, newin_port) as t, \
-         Connection(cluster_host, cluster_port) as c:
-        _join_to_cluster(c, t)
+    with Connection(newin_host, newin_port) as t:
+        with Connection(cluster_host, cluster_port) as c:
+            _join_to_cluster(c, t)
 
 
 def join_no_load(cluster_host, cluster_port, newin_host, newin_port):
@@ -357,23 +357,23 @@ def _check_slave(slave_host, slave_port, t):
 
 
 def replicate(master_host, master_port, slave_host, slave_port):
-    with Connection(slave_host, slave_port) as t, \
-         Connection(master_host, master_port) as master_conn:
-        _ensure_cluster_status_set(master_conn)
-        myself = _list_nodes(master_conn)[1]
-        myid = myself.node_id if myself.master else myself.master_id
+    with Connection(slave_host, slave_port) as t:
+        with Connection(master_host, master_port) as master_conn:
+            _ensure_cluster_status_set(master_conn)
+            myself = _list_nodes(master_conn)[1]
+            myid = myself.node_id if myself.master else myself.master_id
 
-        _join_to_cluster(master_conn, t)
-        logging.info('Instance at %s:%d has joined %s:%d; now set replica',
-                     slave_host, slave_port, master_host, master_port)
+            _join_to_cluster(master_conn, t)
+            logging.info('Instance at %s:%d has joined %s:%d; now set replica',
+                         slave_host, slave_port, master_host, master_port)
 
-        m = t.execute('cluster', 'replicate', myid)
-        logging.debug('Ask `cluster replicate` Rsp %s', m)
-        if m.lower() != 'ok':
-            t.raise_('Unexpected reply after REPCLIATE: %s' % m)
-        _check_slave(slave_host, slave_port, master_conn)
-        logging.info('Instance at %s:%d set as replica to %s',
-                     slave_host, slave_port, myid)
+            m = t.execute('cluster', 'replicate', myid)
+            logging.debug('Ask `cluster replicate` Rsp %s', m)
+            if m.lower() != 'ok':
+                t.raise_('Unexpected reply after REPCLIATE: %s' % m)
+            _check_slave(slave_host, slave_port, master_conn)
+            logging.info('Instance at %s:%d set as replica to %s',
+                         slave_host, slave_port, myid)
 
 
 def _alive_master(node):
